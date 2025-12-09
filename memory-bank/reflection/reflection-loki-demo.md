@@ -1,4 +1,4 @@
-# Reflection — Loki demo push script
+# Reflection — Loki demo push script (initial requests transport)
 
 ## Summary
 - Level 2 enhancement: Python CLI to push test events to Grafana Cloud Loki.
@@ -20,4 +20,5 @@
 
 ## Next steps
 - При желании: задействовать `--interval` как реальную задержку между событиями (сейчас отправка одним батчем).
+- Перенести эти выводы на новую версию с logging_loki.
 

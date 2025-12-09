@@ -18,7 +18,7 @@ Python 3.13 CLI to send test log events to Grafana Cloud Loki.
    LOKI_VERBOSE=0
    ```
 
-3) Send test logs:
+3) Send test logs (transport uses `logging_loki` under the hood):
    ```bash
    python loki_push.py --count 3 --message "hello from demo"
    ```
@@ -35,4 +35,4 @@ Python 3.13 CLI to send test log events to Grafana Cloud Loki.
 - `--verbose`: print request/response details.
 - `--dry-run`: print payload without sending.
 
-Requires `python-dotenv` and `requests` (install with `pip install python-dotenv requests`). Expected success status: 204.
+Requires `python-dotenv`, `requests`, and `python-logging-loki` (installed via `requirements.txt`). Expected success status: 204.

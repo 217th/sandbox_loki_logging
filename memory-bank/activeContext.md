@@ -1,11 +1,11 @@
 # Memory Bank: Active Context
 
 ## Current Focus
-[empty]
+- [reset] (ready for next task)
 
 ## Platform
-[reset]
+- Linux (WSL2), Python 3.13 target.
 
 ## Notes
-[reset]
+- [reset]
 

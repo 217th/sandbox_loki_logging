@@ -4,16 +4,17 @@ CLI для отправки тестовых логов в Grafana Cloud Loki.
 
 Кратко (рус):
 - Грузит переменные из `.env` через python-dotenv (обязательно).
-- Аутентификация Basic: username/token + password/API token.
+- Транспорт: logging_loki (LokiHandler) с Basic Auth (username/token + API token).
 - Лейблы из ENV/CLI, дефолтно app=demo, host=<hostname>.
 - Режимы verbose/dry-run, опция отключения проверки TLS.
-- Требует библиотеку requests (обязательно).
+- Требует библиотеки logging_loki и python-dotenv (requests ставится зависимостью logging_loki).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socket
 import sys
@@ -22,9 +23,9 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 try:
-    import requests  # type: ignore
+    from logging_loki import LokiHandler  # type: ignore
 except Exception:
-    print("[error] requests not installed. Please install with `pip install requests`.", file=sys.stderr)
+    print("[error] logging_loki not installed. Please install with `pip install logging_loki`.", file=sys.stderr)
     sys.exit(1)
 
 try:
@@ -101,42 +102,29 @@ def format_message(base: str, idx: int) -> str:
     return f"{base} | idx={idx} | ts={iso_ts}"
 
 
-def send_with_requests(
-    url: str,
-    payload: Dict[str, object],
-    username: str,
-    password: str,
-    verify: bool,
-    verbose: bool,
-) -> int:
-    """Отправка через requests. Возвращает HTTP статус или -1 при ошибке."""
-    try:
-        resp = requests.post(
-            url,
-            json=payload,
-            auth=(username, password),
-            headers={"Content-Type": "application/json"},
-            timeout=10,
-            verify=verify,
-        )
-        body = resp.text
-        if verbose:
-            print(f"[requests] status={resp.status_code} body={body}")
-        if resp.status_code != 204:
-            print(f"[warn] HTTP {resp.status_code} from Loki at {url}", file=sys.stderr)
-            if body:
-                print(f"[warn] Response body: {body}", file=sys.stderr)
-            print(
-                "[hint] 404/401 часто означают неверный endpoint или креды. "
-                "Проверьте базовый URL (должен заканчиваться на stack). "
-                "Скрипт добавляет /loki/api/v1/push автоматически; "
-                "убедитесь, что схема https:// и правильный поддомен/stack id.",
-                file=sys.stderr,
-            )
-        return resp.status_code
-    except Exception as exc:
-        print(f"[error] requests failed: {exc}", file=sys.stderr)
-        return -1
+def configure_logger(
+    push_url: str, labels: Dict[str, str], username: str, password: str, insecure: bool
+) -> tuple[logging.Logger, logging.Handler]:
+    """
+    Создаёт логгер с LokiHandler из logging_loki.
+
+    - tags=labels задаёт базовые лейблы (как раньше).
+    - auth=(username, password) — Basic Auth.
+    - emitter.session.verify управляется флагом insecure.
+    """
+    logger = logging.getLogger("loki_demo")
+    logger.setLevel(logging.INFO)
+    handler = LokiHandler(
+        url=push_url,
+        tags=labels,
+        auth=(username, password),
+        version="1",  # Loki >=0.4
+    )
+    # Отключаем/включаем проверку TLS на сессии emitter.
+    handler.emitter.session.verify = not insecure
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    return logger, handler
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -228,16 +216,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
         )
 
-    # 9) Отправляем, выбирая доступный HTTP клиент.
-    status = send_with_requests(push_url, payload, username, password, verify=not insecure, verbose=verbose)
+    # 9) Отправляем через logging_loki (по одному сообщению).
+    logger, handler = configure_logger(push_url, labels, username, password, insecure)
+    try:
+        for msg in messages:
+            logger.info(msg)
+    except Exception as exc:
+        print(f"[warn] Loki handler error: {exc}", file=sys.stderr)
+        print("[hint] Check credentials, endpoint, or TLS settings.", file=sys.stderr)
+        return 1
+    finally:
+        try:
+            handler.emitter.close()
+        except Exception:
+            pass
 
-    # 10) Проверяем результат.
-    if status == 204:
-        print("[ok] Loki accepted payload (204).")
-        return 0
-
-    print(f"[warn] Unexpected status {status}. Check credentials, endpoint, or TLS settings.", file=sys.stderr)
-    return 1
+    print("[ok] Loki accepted payload (via logging_loki).")
+    return 0
 
 
 if __name__ == "__main__":
